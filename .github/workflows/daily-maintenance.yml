@@ -78,8 +78,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Configure dedicated automation identity
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Ravi Kumar"
+          git config user.email "ravi752696@gmail.com"
 
           # Only commit when the report has meaningful updates
           if git status --porcelain reports/daily-maintenance.md | grep -q 'reports/daily-maintenance.md'; then
