@@ -1,0 +1,108 @@
+name: Daily Engineering Maintenance
+
+on:
+  schedule:
+    # Run daily at 04:00 UTC
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run maintenance checks without pushing report to git'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-maintenance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    name: Execute Daily Engineering Maintenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate Repository Structure and Workflows
+        id: validate
+        continue-on-error: true
+        run: |
+          python scripts/validate.py --json-out reports/validation_results.json
+
+      - name: Run Security and Dependency Audits
+        id: security
+        continue-on-error: true
+        run: |
+          python scripts/security_check.py --json-out reports/security_results.json
+
+      - name: Execute Automated Regression Tests
+        id: test
+        continue-on-error: true
+        run: |
+          pytest tests/ -v --junitxml=reports/test_results.xml
+
+      - name: Compile Daily Maintenance Report
+        if: always()
+        run: |
+          python scripts/generate_report.py \
+            --validation reports/validation_results.json \
+            --security reports/security_results.json \
+            --test-xml reports/test_results.xml \
+            --report-out reports/daily-maintenance.md \
+            --git-sha "${{ github.sha }}" \
+            --event-name "${{ github.event_name }}"
+
+      - name: Commit and Push Maintenance Report
+        if: always() && github.event.inputs.dry_run != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configure dedicated automation identity
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Only commit when the report has meaningful updates
+          if git status --porcelain reports/daily-maintenance.md | grep -q 'reports/daily-maintenance.md'; then
+            echo "[+] Detected changes in reports/daily-maintenance.md. Committing..."
+            git add reports/daily-maintenance.md
+            git commit -m "chore(maintenance): automated daily maintenance report [skip ci]"
+            
+            # Rebase against remote to avoid race conditions and preserve history
+            git pull --rebase origin main || true
+            git push origin main
+            echo "[+] Daily maintenance report successfully pushed to main."
+          else
+            echo "[-] No changes detected in reports/daily-maintenance.md. Skipping commit."
+          fi
+
+      - name: Check Step Failure Status
+        if: always()
+        run: |
+          if [ "${{ steps.validate.outcome }}" != "success" ] || \
+             [ "${{ steps.security.outcome }}" != "success" ] || \
+             [ "${{ steps.test.outcome }}" != "success" ]; then
+            echo "[!] One or more automated maintenance checks failed or emitted critical warnings."
+            echo "Review reports/daily-maintenance.md and workflow logs for diagnostics."
+            exit 1
+          fi
+          echo "[+] All daily maintenance checks passed successfully."

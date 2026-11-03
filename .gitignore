@@ -1,0 +1,30 @@
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Temporary and local files
+*.tmp
+*.bak
+*.log
+.DS_Store
+Thumbs.db
+reports/validation_results.json
+reports/security_results.json
+reports/test_results.xml
